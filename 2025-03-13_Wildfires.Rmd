@@ -1,0 +1,178 @@
+---
+title: "US Wildfires Data Exploration"
+author: "Ryan Romero"
+date: "March 13th, 2025"
+output: "pdf_document"
+---
+
+## Intro
+
+This R notebook will explore the data set "2.3 Million US Wildfires (1992-2020) 6th Edition" on Kaggle, uploaded by Behrooz Sohrabi. You can find the data set's homepage [here](https://www.kaggle.com/datasets/behroozsohrabi/us-wildfire-records-6th-edition/data). The data set contains data about wildfires in the US from 1992 - 2020. Some of the data includes location, cause, size, containment date, and much more.
+
+## Setup
+
+Loading packages.
+
+```{r Initialization, echo=TRUE, warning=FALSE}
+library(tidyverse)
+library(readr)
+library(skimr)
+library(ggplot2)
+library(gridExtra)
+library(usmap)
+```
+
+Importing data
+
+```{r Importing Data}
+data <- read.csv("/Users/ryan/Developer/2025-03_DataAnalytics-Capstone/Data/archive (1)/data.csv")
+```
+
+## Data Cleaning
+
+Now, I want to clearn the data by looking at summaries and some of the fields. First, I want to remove anything not relevant to my business question
+
+```{r Displaying columns}
+colnames(data)
+```
+
+After referencing Kaggle's details page, I'll create a list of the columns I don't want and remove them
+
+```{r Removing Irrelevant Columns}
+remove_cols <- c("OBJECTID", "Shape", "FOD_ID", "FPA_ID", "SOURCE_SYSTEM_TYPE", "SOURCE_SYSTEM", "NWCG_REPORTING_AGENCY", "NWCG_REPORTING_UNIT_ID", "NWCG_REPORTING_UNIT_NAME", "SOURCE_REPORTING_UNIT", "SOURCE_REPORTING_UNIT_NAME", "LOCAL_FIRE_REPORT_ID", "LOCAL_INCIDENT_ID", "ICS_209_PLUS_INCIDENT_JOIN_ID", "ICS_209_PLUS_COMPLEX_JOIN_ID", "FIRE_CODE", "DISCOVERY_DOY", "CONT_DAY", "OWNER_DESCR")
+
+data = subset(data, select = !(names(data) %in% remove_cols))
+
+skim_without_charts(data)
+```
+
+This data set was already cleaned when uploaded to Kaggle, and I don't think anything jumps out from looking at the statistical summary, so I will move on to exploring the data.
+
+## Data Exploration
+
+To begin, let's look at some different fields in our data set, and what kind of values are in it.
+
+```{r Fires by State}
+table(data$STATE)
+```
+
+This table shows us how many fires occurred in each state. We can see a few states that stick out, such as California and Washington DC, but these make sense due to those state's size. Let's look at the fire size class field. According to the data's description, this field categorizes the fires based on the number of acres in their final perimeter. 'G' is the largest at 5000+ acres, and the scale varies between each consecutive category.
+
+```{r Fires by Size}
+table(data$FIRE_SIZE_CLASS)
+```
+
+To get a better idea of how these values compare to each other I'll plot them on a bar chart.
+
+```{r Fires by Size Plot}
+legend_labels = c("A = 0 - 0.25", "B = 0.26 - 9.9", "C = 10.0 - 99.9", "D = 100 - 299", "E = 300 - 999", "F = 1000 - 4999", "G = 5000+")
+ggplot(data=data, mapping = aes(x=FIRE_SIZE_CLASS, fill=FIRE_SIZE_CLASS)) +
+  geom_bar() +
+  labs(title="Number of fires by size designation", x="Category", fill="Fire Size Designation (amt of acres burned)") +
+  scale_fill_discrete(labels=legend_labels)
+```
+
+Now, let's look at the general year breakdown of the wildfires in this data set. I will do that with a simple barchart.
+
+```{r Fires by Year Plot, echo=TRUE}
+data$FIRE_YEAR <- factor(data$FIRE_YEAR)
+ggplot(data = data, mapping = aes(x=FIRE_YEAR, fill=FIRE_YEAR)) +
+  geom_bar() +
+  scale_x_discrete(guide = guide_axis(angle = 90)) +
+  labs(title="Number of fires by year", x="Year") +
+  theme(legend.position="none")
+```
+
+We can see that there was an spike in the amount of fires in the year 2006, but let's also look at acres burned to get a fuller picture.
+
+```{r Acres Burned by Year Plot, echo=TRUE}
+df_by_year <- data %>% group_by(FIRE_YEAR)
+df_by_year <- df_by_year %>% group_by(FIRE_YEAR)  %>%
+                    summarise(TOTAL_ACRES_BURNED = sum(FIRE_SIZE), 
+                              .groups = 'drop')
+
+df_by_year <- df_by_year %>% mutate(PER_1000_ACRES = TOTAL_ACRES_BURNED * .001)
+
+ggplot(data = df_by_year, mapping = aes(x=FIRE_YEAR, y=PER_1000_ACRES)) +
+  geom_point() +
+  scale_x_discrete(guide = guide_axis(angle = 90)) +
+  labs(title="Total acres burned by year", x="Year", y="1000's of Acres")
+```
+
+From this plot, we can see that 2006 isn't really the most destructive year in terms of acres burned. One potential reason for this is numerous small fires that year in comparison to 2020. We can summarize the counts based on the year and compare.
+
+```{r Size Counts, echo=FALSE}
+df_2006 <- filter(data, FIRE_YEAR == 2006)
+table(df_2006$FIRE_SIZE_CLASS)
+
+df_2020 <- filter(data, FIRE_YEAR == 2020)
+table(df_2020$FIRE_SIZE_CLASS)
+```
+
+In the above tables, the first set is 2006 and the second is 2020. Nothing strange jumps out here, we can even see 2006 had more category G fires, the largest. Another potential reason is how big the largest fires were. Since the G classification is any fire that burns over 5000 acres, there is a lot of room for different sizes. Let's look at the top 10 largest fires of each year.
+
+```{r Sort by Size, echo=FALSE}
+df_2006 <- df_2006[order(-df_2006$FIRE_SIZE),]
+df_2020 <- df_2020[order(-df_2020$FIRE_SIZE),]
+```
+
+10 largest fires of 2006 in acres:
+
+```{r Print 2006, echo=FALSE}
+print(head(df_2006$FIRE_SIZE, 10))
+```
+
+10 largest fires of 2020 in acres:
+
+```{r Print 2020, echo=FALSE}
+print(head(df_2020$FIRE_SIZE, 10))
+```
+
+These numbers look a little more like what we'd expect, we can compare the mean of the fire sizes as well to get some more information.
+
+2006 Mean (acres):
+
+```{r 2006 Mean, echo=FALSE}
+mean(df_2006$FIRE_SIZE)
+```
+
+2020 Mean (acres):
+
+```{r 2020 Mean, echo=FALSE}
+mean(df_2020$FIRE_SIZE)
+```
+
+It looks like instead of many small fires in 2006 causing the difference we saw in the scatter plot, it was actually a number of very large fires in 2020.
+
+Now let's start looking at some data more specific to our question.
+
+```{r Map Plot, echo=TRUE}
+df_by_county <- data %>% group_by(FIPS_CODE) %>%
+                  summarize(TOTAL_ACRES_BURNED = sum(FIRE_SIZE),
+                            .groups = 'drop')
+
+names(df_by_county)[names(df_by_county) == 'FIPS_CODE'] <- 'fips'
+df_by_year <- df_by_year %>% mutate(PER_1000_ACRES = TOTAL_ACRES_BURNED * .001)
+
+df_by_county$TOTAL_ACRES_BURNED <- round(df_by_county$TOTAL_ACRES_BURNED, digit=3)
+
+plot_usmap(data = df_by_county, 
+           regions="counties", 
+           values="TOTAL_ACRES_BURNED",
+           linewidth=.03,
+           color="white") +
+    scale_fill_gradient(
+      trans = 'log',
+      high = '#0072B2',
+      low = 'white'
+    ) +
+    theme(legend.position = 'bottom') +
+    labs(fill = 'Wildfires Frequency') +
+    guides(
+      fill = guide_colorbar(
+        barwidth = unit(10, 'cm')
+      )
+    )
+```
+
+This chart plots the total number of acres burned by county in the US. The counties that are a darker blue experienced more burned acres that the colors closer to white. This data is interesting, but it would be better to visualize this while being able to filter out the year, or state. Instead of doing this in R, I will export the trimmed down data frame to a CSV in order to use it in Tableau and create some interactive visualizations.
